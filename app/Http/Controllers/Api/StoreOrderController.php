@@ -534,47 +534,147 @@ class StoreOrderController extends Controller
             'table_number' => 'nullable|string',
             'customer_name' => 'nullable|string',
             'guest_count' => 'nullable|integer|min:1',
-            // === MEMBER ID ===
             'member_id' => 'nullable|exists:members,id',
-            // =================
+            'items' => 'nullable|array',
+            'items.*.product_id' => 'required_with:items|exists:products,id',
+            'items.*.quantity' => 'required_with:items|numeric|min:1',
+            'items.*.uom' => 'required_with:items|string',
+            'items.*.note' => 'nullable|string',
+            'items.*.addons' => 'nullable|array',
+            'items.*.addons.*.addon_id' => 'required_with:items.*.addons|exists:products,id',
+            'items.*.addons.*.quantity' => 'required_with:items.*.addons|numeric|min:1',
+            'items.*.addons.*.price' => 'nullable|numeric',
         ]);
 
-        // Logic Nama
         $memberName = null;
         if (!empty($validated['member_id'])) {
              $member = Member::find($validated['member_id']);
              $memberName = $member?->name;
         }
         $customerName = $validated['customer_name'] ?? $memberName ?? $validated['table_number'] ?? 'Guest';
+        $businessId = $user->business_id;
 
-        $order = Order::create([
-            'order_number' => 'POS-' . random_int(100000, 999999),
-            'outlet_id' => $outlet->id,
-            'cashier_id' => $user->id,
-            'business_id' => $user->business_id,
-            'sub_total' => 0,
-            'total_price' => 0,
-            'total_items' => 0,
-            'tax' => 0,
-            'discount' => 0,
-            'payment_method' => 'cash',
-            'status' => 'pending',
-            'type_order' => $validated['type_order'],
-            'table_number' => $validated['table_number'] ?? null,
-            'customer_name' => $customerName,
-            'guest_count' => $validated['guest_count'] ?? 1,
+        // === HITUNG ITEMS (JIKA ADA) ===
+        $subTotal = 0;
+        $itemsCalculated = new Collection();
+        
+        if (!empty($validated['items'])) {
+            foreach ($validated['items'] as $item) {
+                $calculated = $this->calculateItemPrice($item, $outlet);
+                $orderItemModel = new OrderItem($calculated['item_data']);
+                $orderItemModel->_addons_data = $calculated['addons_data'];
+                $itemsCalculated->push($orderItemModel);
+                $subTotal += $calculated['item_data']['total'];
+            }
+        }
 
-            // === SIMPAN MEMBER ID ===
-            'member_id' => $validated['member_id'] ?? null,
-            // ========================
-        ]);
+        // Kalkulasi Pajak Dasar
+        $taxSetting = BusinessSetting::where('business_id', $businessId)->where('type', 'tax')->where('status', true)->first();
+        $taxPercent = $taxSetting ? (float)$taxSetting->value : 0;
+        $taxAmount = ($subTotal * $taxPercent) / 100;
+        $grandTotal = $subTotal + $taxAmount;
 
+        $totalItemsInBaseUom = 0;
+        foreach ($itemsCalculated as $item) {
+            $product = Product::with('uoms')->find($item->product_id);
+            $uomData = $product->uoms->where('uom_name', $item->uom)->first();
+            $conversionRate = $uomData?->conversion_rate ?? 1;
+            $totalItemsInBaseUom += $item->quantity * $conversionRate;
+        }
+
+        $order = DB::transaction(function () use ($user, $outlet, $validated, $customerName, $businessId, $subTotal, $taxAmount, $grandTotal, $totalItemsInBaseUom, $itemsCalculated) {
+            $order = Order::create([
+                'order_number' => 'POS-' . random_int(100000, 999999),
+                'outlet_id' => $outlet->id,
+                'cashier_id' => $user->id,
+                'business_id' => $businessId,
+                'sub_total' => $subTotal,
+                'total_price' => $grandTotal,
+                'total_items' => $totalItemsInBaseUom,
+                'tax' => $taxAmount,
+                'discount' => 0,
+                'payment_method' => 'cash',
+                'status' => 'pending', // Tetap pending karena belum bayar
+                'type_order' => $validated['type_order'],
+                'table_number' => $validated['table_number'] ?? null,
+                'customer_name' => $customerName,
+                'guest_count' => $validated['guest_count'] ?? 1,
+                'member_id' => $validated['member_id'] ?? null,
+            ]);
+
+            // Save items & addons (Jika Ada)
+            if ($itemsCalculated->isNotEmpty()) {
+                $order->items()->saveMany($itemsCalculated);
+                foreach ($itemsCalculated as $savedItem) {
+                    if (!empty($savedItem->_addons_data)) {
+                        $savedItem->addons()->createMany($savedItem->_addons_data);
+                    }
+                }
+            }
+
+            return $order;
+        });
+
+        // Pastikan meja dikunci (Jika pelanggan memilih meja)
         $this->ensureTableIsOccupied($order);
-        $order->load('member');
+        
+        $order->load(['items.product', 'items.addons.addonProduct', 'member']);
         return (new OrderResource($order))
             ->response()
             ->setStatusCode(201);
     }
+
+    // public function storeOpenBill(Request $request): JsonResponse
+    // {
+    //     $user = $request->user();
+    //     $outlet = $user->locationable;
+
+    //     $validated = $request->validate([
+    //         'type_order' => 'required|string',
+    //         'table_number' => 'nullable|string',
+    //         'customer_name' => 'nullable|string',
+    //         'guest_count' => 'nullable|integer|min:1',
+    //         // === MEMBER ID ===
+    //         'member_id' => 'nullable|exists:members,id',
+    //         // =================
+    //     ]);
+
+    //     // Logic Nama
+    //     $memberName = null;
+    //     if (!empty($validated['member_id'])) {
+    //          $member = Member::find($validated['member_id']);
+    //          $memberName = $member?->name;
+    //     }
+    //     $customerName = $validated['customer_name'] ?? $memberName ?? $validated['table_number'] ?? 'Guest';
+
+    //     $order = Order::create([
+    //         'order_number' => 'POS-' . random_int(100000, 999999),
+    //         'outlet_id' => $outlet->id,
+    //         'cashier_id' => $user->id,
+    //         'business_id' => $user->business_id,
+    //         'sub_total' => 0,
+    //         'total_price' => 0,
+    //         'total_items' => 0,
+    //         'tax' => 0,
+    //         'discount' => 0,
+    //         'payment_method' => 'cash',
+    //         'status' => 'pending',
+    //         'type_order' => $validated['type_order'],
+    //         'table_number' => $validated['table_number'] ?? null,
+    //         'customer_name' => $customerName,
+    //         'guest_count' => $validated['guest_count'] ?? 1,
+
+    //         // === SIMPAN MEMBER ID ===
+    //         'member_id' => $validated['member_id'] ?? null,
+    //         // ========================
+    //     ]);
+
+    //     $this->ensureTableIsOccupied($order);
+    //     $order->load('member');
+    //     return (new OrderResource($order))
+    //         ->response()
+    //         ->setStatusCode(201);
+    // }
 
     public function show(Order $order): OrderResource
     {
@@ -874,6 +974,9 @@ class StoreOrderController extends Controller
                 'applied_rules' => $appliedRules,
                 'proof' => $validatedData['proof'] ?? null,
             ]);
+            
+            $this->ensureTableIsOccupied($order);
+
             $order->items()->saveMany($itemsCalculated);
             foreach ($itemsCalculated as $savedItem) {
                 if (!empty($savedItem->_addons_data)) {
