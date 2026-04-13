@@ -1,0 +1,130 @@
+<?php
+
+namespace App\Filament\Resources;
+
+use App\Filament\Resources\ZoneResource\Pages;
+use App\Filament\Resources\ZoneResource\RelationManagers;
+use App\Models\Zone;
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Resources\Resource;
+use Filament\Tables;
+use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+
+class ZoneResource extends Resource
+{
+    protected static ?string $model = Zone::class;
+
+    protected static ?string $navigationIcon = 'heroicon-o-view-columns';
+    protected static ?string $navigationGroup = 'Master Data';
+
+    /**
+     * Helper function untuk memeriksa permission via query langsung (paling andal).
+     */
+    private static function userHasPermission(string $permissionName): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+        if (self::userHasRole('Owner')) return true;
+
+        return DB::table('model_has_roles')
+            ->where('model_type', \App\Models\User::class)
+            ->where('model_id', $user->id)
+            ->join('role_has_permissions', 'model_has_roles.role_id', '=', 'role_has_permissions.role_id')
+            ->join('permissions', 'role_has_permissions.permission_id', '=', 'permissions.id')
+            ->where('permissions.name', $permissionName)
+            ->exists();
+    }
+
+    /**
+     * Helper function untuk memeriksa role via query langsung.
+     */
+    private static function userHasRole(string $roleName): bool
+    {
+        $user = Auth::user();
+        if (!$user) return false;
+
+        return DB::table('model_has_roles')
+            ->where('model_type', \App\Models\User::class)
+            ->where('model_id', $user->id)
+            ->join('roles', 'model_has_roles.role_id', '=', 'roles.id')
+            ->where('roles.name', $roleName)
+            ->exists();
+    }
+
+public static function canViewAny(): bool
+    {
+        return self::userHasPermission('manage areas');
+    }
+
+    public static function canCreate(): bool
+    {
+        return self::userHasPermission('manage areas');
+    }
+
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('business_id', Auth::user()->business_id);
+    }
+
+    public static function form(Form $form): Form
+    {
+        return $form
+            ->schema([
+                Forms\Components\Section::make()
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->required()
+                            ->maxLength(255),
+                        Forms\Components\TextInput::make('code')
+                            ->required()
+                            ->maxLength(255)
+                            ->unique(ignoreRecord: true),
+                        Forms\Components\Textarea::make('description')
+                            ->columnSpanFull(),
+                    ])->columns(2),
+            ]);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return $table
+            ->columns([
+                Tables\Columns\TextColumn::make('name')->searchable(),
+                Tables\Columns\TextColumn::make('code')->searchable(),
+                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
+            ])
+            ->filters([
+                //
+            ])
+            ->actions([
+                Tables\Actions\EditAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            //
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => Pages\ListZones::route('/'),
+            'create' => Pages\CreateZone::route('/create'),
+            'edit' => Pages\EditZone::route('/{record}/edit'),
+        ];
+    }
+}

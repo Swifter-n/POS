@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Http\Requests\API;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class UpdateBrandRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+         // Ambil brand dari rute dan cek hak akses update
+        $brand = $this->route('brand');
+        return $this->user()->can('update', $brand);
+    }
+
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        return [
+            'name' => 'sometimes|string|max:255',
+            'status' => 'sometimes|boolean',
+            'logo' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+        ];
+    }
+}
