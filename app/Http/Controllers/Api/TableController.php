@@ -231,5 +231,6 @@ class TableController extends Controller
 
         return response()->json(['success' => true, 'message' => 'Posisi meja berhasil disimpan.']);
     }
+    
 
 }

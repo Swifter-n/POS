@@ -27,7 +27,8 @@ class Table extends Model
         'x',
         'y',
         'value',
-        'capacity'
+        'capacity',
+        'active_order_id',
     ];
 
     // Field yang disembunyikan (tidak perlu dikirim)
@@ -74,19 +75,40 @@ class Table extends Model
         $startWindow = $now->copy()->subMinutes(30); // 30 menit yang lalu
         $endWindow = $now->copy()->addMinutes(60);   // Sampai 60 menit ke depan
 
-        // Menggunakan namespace lengkap
         $hasActiveReservation = \App\Models\Reservation::where('table_id', $this->id)
-            ->where(function($q) use ($startWindow, $endWindow) {
-                // Grouping OR agar query aman
-                $q->where('status', 'seated') // Jika seated, pasti occupied
-                  ->orWhere(function($query) use ($startWindow, $endWindow) {
-                      $query->where('status', 'booked')
-                            ->whereBetween('reservation_time', [$startWindow, $endWindow]);
-                  });
-            })
-            ->exists();
+        ->whereDate('reservation_time', now()->toDateString()) // Fokus ke hari ini
+        ->whereIn('status', ['seated', 'booked'])
+        ->exists();
 
-        return $hasActiveReservation;
+    return $hasActiveReservation;
+        // $hasActiveReservation = \App\Models\Reservation::where('table_id', $this->id)
+        //     ->where(function($q) use ($startWindow, $endWindow) {
+        //         // Grouping OR agar query aman
+        //         $q->where('status', 'seated') // Jika seated, pasti occupied
+        //           ->orWhere(function($query) use ($startWindow, $endWindow) {
+        //               $query->where('status', 'booked')
+        //                     ->whereBetween('reservation_time', [$startWindow, $endWindow]);
+        //           });
+        //     })
+        //     ->exists();
+
+        // return $hasActiveReservation;
+    }
+
+    // === LOGIKA MENDAPATKAN ID ORDER AKTIF ===
+    public function getActiveOrderIdAttribute()
+    {
+        // Hanya cari order jika meja sedang terisi
+        if (!$this->is_occupied) {
+            return null;
+        }
+
+        $activeOrder = \App\Models\Order::where('table_number', $this->code)
+            ->where('outlet_id', $this->outlet_id)
+            ->whereIn('status', ['pending', 'unpaid', 'processing'])
+            ->first();
+
+        return $activeOrder ? $activeOrder->id : null;
     }
 
     // Relasi Outlet
@@ -100,4 +122,5 @@ class Table extends Model
     {
         return $this->attributes['capacity'] ?? 4;
     }
+    
 }

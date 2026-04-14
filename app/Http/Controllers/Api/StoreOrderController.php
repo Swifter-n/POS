@@ -869,6 +869,148 @@ class StoreOrderController extends Controller
         return (new OrderResource($order))->response();
     }
 
+    public function cancelOrder(Request $request, $id)
+{
+    $request->validate([
+        'cancel_reason' => 'nullable|string|max:255',
+    ]);
+
+    try {
+        DB::beginTransaction();
+
+        $order = \App\Models\Order::lockForUpdate()->find($id);
+        if (!$order) {
+            return response()->json(['success' => false, 'message' => 'Order tidak ditemukan.'], 404);
+        }
+
+        // 1. Update Status Order & Simpan Alasan ke field 'notes'
+        $order->status = 'cancelled';
+        $reason = $request->cancel_reason ?: 'Dibatalkan oleh kasir';
+        $order->remarks = ($order->remarks ? $order->remarks . "\n" : "") . "[Void Reason]: " . $reason;
+        $order->save();
+
+        // 2. Cari Data Meja
+        $table = \App\Models\Table::where('outlet_id', $order->outlet_id)
+                                  ->where('code', $order->table_number)
+                                  ->first();
+                                  
+        if ($table) {
+            // A. Update Status Fisik Meja
+            $table->update(['status' => 'available']);
+
+            // B. PENTING: Jika ada reservasi 'seated' di meja ini, batalkan juga
+            \App\Models\Reservation::where('table_id', $table->id)
+                ->where('status', 'seated')
+                ->update(['status' => 'cancelled']); // Atau 'completed' sesuai kebijakan
+        }
+
+        // 3. Trigger Return Stock
+        event(new \App\Events\PosOrderCancelled($order));
+
+        DB::commit();
+        return response()->json(['success' => true, 'message' => 'Pesanan berhasil dibatalkan.']);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+    }
+}
+
+
+    /**
+     * Memindahkan meja pesanan yang sedang aktif (Move Table)
+     * POST /api/v1/pos/orders/{id}/move-table
+     */
+    public function moveTable(Request $request, $id)
+    {
+        // 1. Validasi input dari Flutter
+        $request->validate([
+            'target_table_code' => 'required|string',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            // 2. Cari Order dan Kunci Row-nya (Pessimistic Lock)
+            $order = Order::lockForUpdate()->find($id);
+
+            if (!$order) {
+                return response()->json(['success' => false, 'message' => 'Order tidak ditemukan.'], 404);
+            }
+
+            // Pastikan order masih aktif (belum dibayar/dicancel)
+            if (!in_array($order->status, ['pending', 'unpaid', 'processing'])) {
+                return response()->json(['success' => false, 'message' => 'Order ini sudah selesai atau dibatalkan, tidak bisa pindah meja.'], 400);
+            }
+
+            $outletId = $order->outlet_id;
+            $sourceTableCode = $order->table_number;
+            $targetTableCode = $request->target_table_code;
+
+            // Cegah pemindahan ke meja yang sama
+            if ($sourceTableCode === $targetTableCode) {
+                return response()->json(['success' => false, 'message' => 'Meja tujuan tidak boleh sama dengan meja saat ini.'], 400);
+            }
+
+            // 3. Cari Meja Asal
+            $sourceTable = Table::where('outlet_id', $outletId)
+                                ->where('code', $sourceTableCode)
+                                ->first();
+
+            // 4. Cari dan Kunci Meja Tujuan (Mencegah Race Condition)
+            $targetTable = Table::where('outlet_id', $outletId)
+                                ->where('code', $targetTableCode)
+                                ->lockForUpdate()
+                                ->first();
+
+            if (!$targetTable) {
+                return response()->json(['success' => false, 'message' => 'Meja tujuan tidak ditemukan.'], 404);
+            }
+
+            // 5. Validasi apakah Meja Tujuan kosong
+            // Kita menggunakan accessor getIsOccupiedAttribute() dari model Table Anda
+            if ($targetTable->is_occupied) {
+                return response()->json(['success' => false, 'message' => 'Gagal! Meja tujuan baru saja terisi atau sudah direservasi.'], 400);
+            }
+
+            // --- 6. PROSES PEMINDAHAN (EKSEKUSI) ---
+            
+            // A. Update nomor meja di Data Order
+            $order->table_number = $targetTable->code;
+            
+            // Opsional: Tambahkan jejak audit di kolom note (jika ada kolom note di table orders)
+            // $order->notes = $order->notes . "\n[System] Pindah dari meja {$sourceTableCode} ke {$targetTableCode}";
+            
+            $order->save();
+
+            // B. Update Status Fisik Meja Asal menjadi available (Jika memakai logic Quick Cart)
+            if ($sourceTable && $sourceTable->status === 'occupied') {
+                $sourceTable->update(['status' => 'available']);
+            }
+            
+            // C. Update Status Fisik Meja Tujuan menjadi occupied
+            $targetTable->update(['status' => 'occupied']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil memindahkan pelanggan ke meja {$targetTableCode}.",
+                'data' => [
+                    'order_id' => $order->id,
+                    'new_table' => $targetTableCode
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan internal: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
     /**
@@ -974,7 +1116,7 @@ class StoreOrderController extends Controller
                 'applied_rules' => $appliedRules,
                 'proof' => $validatedData['proof'] ?? null,
             ]);
-            
+
             $this->ensureTableIsOccupied($order);
 
             $order->items()->saveMany($itemsCalculated);

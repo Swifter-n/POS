@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Reservation;
+use App\Models\Table;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 class ReservationController extends Controller
@@ -123,4 +125,18 @@ class ReservationController extends Controller
 
         return response()->json(['success' => true, 'data' => $reservation]);
     }
+
+    public function cancelReservation($id) {
+    DB::transaction(function () use ($id) {
+        $reservation = Reservation::findOrFail($id);
+        $reservation->update(['status' => 'cancelled']);
+
+        // Jika tamu sudah duduk (seated), kembalikan status fisik meja
+        if ($reservation->status === 'seated') {
+            Table::where('id', $reservation->table_id)->update(['status' => 'available']);
+        }
+    });
+    
+    return response()->json(['message' => 'Reservasi berhasil dibatalkan']);
+}
 }

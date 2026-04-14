@@ -64,6 +64,7 @@ Route::prefix('v1')->group(function () {
     Route::apiResource('/pos/tables', TableController::class);
     Route::post('/pos/tables/{id}/clear', [TableController::class, 'clear']);
     Route::post('/pos/tables/positions', [TableController::class, 'updatePositions']);
+    
 
     Route::get('/pos/orders/open', [StoreOrderController::class, 'getOpenOrders']);
     Route::post('/pos/orders/open-bill', [StoreOrderController::class, 'storeOpenBill']);
@@ -75,10 +76,12 @@ Route::prefix('v1')->group(function () {
     Route::post('/pos/orders/{order}/remove-promo', [StoreOrderController::class, 'removePromo']);
     Route::post('/pos/orders/{order}/apply-promo', [StoreOrderController::class, 'applyPromo']);
     Route::post('/pos/orders/{order}/recalculate', [StoreOrderController::class, 'recalculate']);
-
+    Route::post('/pos/orders/{id}/cancel', [StoreOrderController::class, 'cancelOrder']);
+    Route::post('/pos/orders/{id}/move-table', [StoreOrderController::class, 'moveTable']);
     Route::apiResource('/pos/reservations', ReservationController::class);
     Route::post('/pos/reservations/{id}/status', [ReservationController::class, 'updateStatus']);
 
+    
     Route::get('/pos/members/check', [MemberController::class, 'check']);
     Route::post('/pos/members/register', [MemberController::class, 'register']);
     Route::get('/pos/members', [MemberController::class, 'index']);

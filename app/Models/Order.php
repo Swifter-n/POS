@@ -40,6 +40,7 @@ class Order extends Model
         'points_redeemed',
         'cash_register_id',
         'applied_rules',
+        'remarks',
     ];
 
     protected $casts = [
