@@ -76,7 +76,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/pos/orders/{order}/remove-promo', [StoreOrderController::class, 'removePromo']);
     Route::post('/pos/orders/{order}/apply-promo', [StoreOrderController::class, 'applyPromo']);
     Route::post('/pos/orders/{order}/recalculate', [StoreOrderController::class, 'recalculate']);
-    Route::post('/pos/orders/{id}/cancel', [StoreOrderController::class, 'cancelOrder']);
+    Route::post('/pos/orders/{id}/cancel-order', [StoreOrderController::class, 'cancelOrder']);
     Route::post('/pos/orders/{id}/move-table', [StoreOrderController::class, 'moveTable']);
     Route::apiResource('/pos/reservations', ReservationController::class);
     Route::post('/pos/reservations/{id}/status', [ReservationController::class, 'updateStatus']);

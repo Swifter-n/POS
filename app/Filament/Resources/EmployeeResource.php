@@ -95,7 +95,7 @@ class EmployeeResource extends Resource
                                         ->where('status', true)->pluck('name', 'id'))
                             ->searchable()
                             ->preload()
-                            ->live() // <-- PENTING
+                            ->live()
                             ->visible(fn (Get $get) => $get('locationable_type') === Warehouse::class)
                             ->required(fn (Get $get) => $get('locationable_type') === Warehouse::class)
                             ->helperText('Pilih Plant utama tempat staf ini ditugaskan.'),

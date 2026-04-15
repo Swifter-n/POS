@@ -55,44 +55,30 @@ class Table extends Model
     // Menggabungkan Status Fisik (Quick Cart) + Logic Order/Reservasi (Open Bill)
     public function getIsOccupiedAttribute()
     {
-        // 1. CEK STATUS FISIK (Khusus Quick Cart / Manual Clear)
-        // Jika database bilang 'occupied' (karena baru saja ada transaksi quick), maka occupied.
+        // 1. Cek dari Kolom Fisik
         if ($this->status === 'occupied') {
             return true;
         }
 
-        // 2. CEK ORDER AKTIF (Logic Open Bill / Dine-in belum bayar)
-        // Menggunakan namespace lengkap untuk keamanan
+        // 2. Cek dari Order yang sedang aktif di meja ini (Open Bill)
         $hasActiveOrder = \App\Models\Order::where('table_number', $this->code)
             ->where('outlet_id', $this->outlet_id)
             ->whereIn('status', ['pending', 'unpaid', 'processing'])
             ->exists();
 
-        if ($hasActiveOrder) return true;
+        if ($hasActiveOrder) {
+            return true;
+        }
 
-        // 3. CEK RESERVASI AKTIF (Logic Reservasi)
-        $now = now();
-        $startWindow = $now->copy()->subMinutes(30); // 30 menit yang lalu
-        $endWindow = $now->copy()->addMinutes(60);   // Sampai 60 menit ke depan
-
+        // 3. Cek dari Reservasi (Solusi untuk Masalah 2)
+        // Pastikan tabel Reservations menggunakan 'table_id' (integer), bukan 'code' (string)
         $hasActiveReservation = \App\Models\Reservation::where('table_id', $this->id)
-        ->whereDate('reservation_time', now()->toDateString()) // Fokus ke hari ini
-        ->whereIn('status', ['seated', 'booked'])
-        ->exists();
+            // Menggunakan Carbon untuk memastikan hari ini sesuai timezone server (config/app.php -> 'timezone' => 'Asia/Jakarta')
+            ->whereDate('reservation_time', \Carbon\Carbon::today()) 
+            ->whereIn('status', ['booked', 'seated'])
+            ->exists();
 
-    return $hasActiveReservation;
-        // $hasActiveReservation = \App\Models\Reservation::where('table_id', $this->id)
-        //     ->where(function($q) use ($startWindow, $endWindow) {
-        //         // Grouping OR agar query aman
-        //         $q->where('status', 'seated') // Jika seated, pasti occupied
-        //           ->orWhere(function($query) use ($startWindow, $endWindow) {
-        //               $query->where('status', 'booked')
-        //                     ->whereBetween('reservation_time', [$startWindow, $endWindow]);
-        //           });
-        //     })
-        //     ->exists();
-
-        // return $hasActiveReservation;
+        return $hasActiveReservation;
     }
 
     // === LOGIKA MENDAPATKAN ID ORDER AKTIF ===

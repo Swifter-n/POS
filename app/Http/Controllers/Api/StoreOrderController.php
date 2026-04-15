@@ -872,7 +872,7 @@ class StoreOrderController extends Controller
     public function cancelOrder(Request $request, $id)
 {
     $request->validate([
-        'cancel_reason' => 'nullable|string|max:255',
+        'remarks' => 'nullable|string|max:255',
     ]);
 
     try {
@@ -885,8 +885,9 @@ class StoreOrderController extends Controller
 
         // 1. Update Status Order & Simpan Alasan ke field 'notes'
         $order->status = 'cancelled';
-        $reason = $request->cancel_reason ?: 'Dibatalkan oleh kasir';
-        $order->remarks = ($order->remarks ? $order->remarks . "\n" : "") . "[Void Reason]: " . $reason;
+        $reason = $request->remarks ? $request->remarks : 'Dibatalkan oleh kasir';
+        $order->remarks = $reason;
+        // $order->remarks = ($order->remarks ? $order->remarks . "\n" : "") . "[Void Reason]: " . $reason;
         $order->save();
 
         // 2. Cari Data Meja
