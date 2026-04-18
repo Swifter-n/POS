@@ -47,14 +47,13 @@ class ReservationController extends Controller
         $reservations = Reservation::where('outlet_id', $outletId)
             ->where(function ($query) {
                 // KELOMPOK 1: Reservasi Aktif (Booked/Seated)
-                // Tampilkan yang tanggal reservasinya Hari Ini atau Masa Depan
                 $query->where(function ($q) {
                     $q->where('status', '!=', 'cancelled')
-                      ->where('status', '!=', 'completed') // Opsional: Sembunyikan yang sudah selesai makan
-                      ->whereDate('reservation_time', '>=', now()->today());
+                      ->where('status', '!=', 'completed') 
+                      // 🔥 PERBAIKAN: Gunakan \Carbon\Carbon::today() atau helper today()
+                      ->whereDate('reservation_time', '>=', \Carbon\Carbon::today());
                 })
                 // KELOMPOK 2: Reservasi Batal (Cancelled)
-                // Tampilkan hanya yang dibatalkan dalam 24 jam terakhir (Auto Cleanup)
                 ->orWhere(function ($q) {
                     $q->where('status', 'cancelled')
                       ->where('updated_at', '>=', now()->subDay());
