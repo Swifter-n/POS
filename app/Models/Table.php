@@ -29,6 +29,10 @@ class Table extends Model
         'value',
         'capacity',
         'active_order_id',
+        'customer_name',
+        'upcoming_reservation',
+        'reserved_customer_name',
+        'reservation_status',
     ];
 
     // Field yang disembunyikan (tidak perlu dikirim)
@@ -50,6 +54,74 @@ class Table extends Model
     public function getValueAttribute() {
         return $this->qr_content;
     }
+
+    public function getReservationStatusAttribute()
+    {
+        $reservation = \App\Models\Reservation::where('table_id', $this->id)
+            ->whereDate('reservation_time', \Carbon\Carbon::today())
+            ->whereIn('status', ['booked', 'seated']) 
+            ->orderBy('reservation_time', 'asc')
+            ->first();
+
+        return $reservation ? $reservation->status : null;
+    }
+
+    public function getReservedCustomerNameAttribute()
+    {
+        $reservation = \App\Models\Reservation::where('table_id', $this->id)
+            ->whereDate('reservation_time', \Carbon\Carbon::today())
+            ->where('status', 'booked') 
+            ->orderBy('reservation_time', 'asc')
+            ->first();
+
+        return $reservation ? $reservation->name : null;
+    }
+    
+
+    public function getUpcomingReservationAttribute()
+    {
+        // Hanya cari reservasi hari ini yang statusnya masih 'booked' (belum seated)
+        $reservation = \App\Models\Reservation::where('table_id', $this->id)
+            ->whereDate('reservation_time', \Carbon\Carbon::today())
+            ->where('status', 'booked') 
+            ->orderBy('reservation_time', 'asc')
+            ->first();
+
+        if ($reservation) {
+            // Mengembalikan jamnya saja (contoh: "19:00")
+            return \Carbon\Carbon::parse($reservation->reservation_time)->format('H:i');
+        }
+
+        return null;
+    }
+
+    public function getCustomerNameAttribute()
+{
+    if (!$this->is_occupied) {
+        return null;
+    }
+
+    // 1. Cek dari Order yang sedang aktif (Open Bill)
+    $activeOrder = \App\Models\Order::where('table_number', $this->code)
+        ->where('outlet_id', $this->outlet_id)
+        ->whereIn('status', ['pending', 'unpaid', 'processing'])
+        ->latest()->first();
+    if ($activeOrder) return $activeOrder->customer_name;
+
+    // 2. 🔥 PERBAIKAN: Jika belum ada order, ambil dari nama RESERVASI yang sudah duduk (seated)
+    $seatedReservation = \App\Models\Reservation::where('table_id', $this->id)
+        ->whereDate('reservation_time', \Carbon\Carbon::today())
+        ->where('status', 'seated')
+        ->first();
+    if ($seatedReservation) return $seatedReservation->name;
+
+    // 3. Fallback: Order terakhir hari ini (Dine In Lunas)
+    $lastOrder = \App\Models\Order::where('table_number', $this->code)
+        ->whereDate('created_at', \Carbon\Carbon::today())
+        ->latest()->first();
+        
+    return $lastOrder ? $lastOrder->customer_name : null;
+}
 
     // === LOGIKA STATUS MEJA (HYBRID) ===
     // Menggabungkan Status Fisik (Quick Cart) + Logic Order/Reservasi (Open Bill)

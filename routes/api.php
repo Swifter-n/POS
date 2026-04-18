@@ -64,6 +64,7 @@ Route::prefix('v1')->group(function () {
     Route::apiResource('/pos/tables', TableController::class);
     Route::post('/pos/tables/{id}/clear', [TableController::class, 'clear']);
     Route::post('/pos/tables/positions', [TableController::class, 'updatePositions']);
+    Route::post('/pos/tables/{id}/check-in', [TableController::class, 'checkIn']);
     
 
     Route::get('/pos/orders/open', [StoreOrderController::class, 'getOpenOrders']);

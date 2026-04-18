@@ -122,6 +122,12 @@ class TableController extends Controller
             Reservation::where('table_id', $table->id)
                 ->where('status', 'seated')
                 ->update(['status' => 'completed']);
+            
+            // 3. Batalkan Reservasi 'booked' yang menggantung
+            Reservation::where('table_id', $table->id)
+                ->whereDate('reservation_time', \Carbon\Carbon::today())
+                ->where('status', 'booked')
+                ->update(['status' => 'cancelled']);
         });
 
         return response()->json(['success' => true, 'message' => 'Meja berhasil dikosongkan.']);
@@ -231,6 +237,31 @@ class TableController extends Controller
 
         return response()->json(['success' => true, 'message' => 'Posisi meja berhasil disimpan.']);
     }
+
+
+public function checkIn(Request $request, $id)
+{
+    $table = Table::find($id);
+    if (!$table) {
+        return response()->json(['success' => false, 'message' => 'Meja tidak ditemukan'], 404);
+    }
+
+    // Cari reservasi booked hari ini untuk meja ini
+    $reservation = Reservation::where('table_id', $table->id)
+        ->whereDate('reservation_time', \Carbon\Carbon::today())
+        ->where('status', 'booked')
+        ->first();
+
+    if ($reservation) {
+        $reservation->update(['status' => 'seated']);
+        return response()->json([
+            'success' => true, 
+            'message' => 'Check-in berhasil. Selamat melayani!'
+        ]);
+    }
+
+    return response()->json(['success' => false, 'message' => 'Tidak ada reservasi untuk meja ini'], 400);
+}
     
 
 }
