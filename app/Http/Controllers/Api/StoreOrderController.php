@@ -78,23 +78,6 @@ class StoreOrderController extends Controller
 
         Log::info("POS: Table {$table->id} ($tableCode) status updated to 'occupied'.");
 
-        // 2. Buat Reservasi Bayangan (untuk history & kompatibilitas logic lama)
-        $existingRes = Reservation::where('table_id', $table->id)
-            ->where('status', 'seated')
-            ->exists();
-
-        if (!$existingRes) {
-            Reservation::create([
-                'outlet_id' => $order->outlet_id,
-                'customer_name' => $order->customer_name ?? 'Guest',
-                'table_id' => $table->id,
-                'guest_count' => $order->guest_count ?? 1,
-                'reservation_time' => now(),
-                'status' => 'seated',
-                'notes' => 'Quick Order #' . $order->order_number,
-            ]);
-            Log::info("POS: Ghost reservation created for table {$table->id}.");
-        }
     }
 
      /**

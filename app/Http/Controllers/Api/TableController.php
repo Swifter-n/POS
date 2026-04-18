@@ -30,25 +30,47 @@ class TableController extends Controller
     /**
      * GET /api/v1/pos/tables
      */
-    public function index(Request $request)
-    {
-        $user = $request->user();
-        $outletId = $this->getOutletId($user);
 
-        if (!$outletId) {
+    public function index(Request $request) {
+    $user = $request->user();
+    $outletId = $this->getOutletId($user);
+
+            if (!$outletId) {
             // Jika user tidak punya outlet, return kosong (bukan error)
             return response()->json(['success' => true, 'data' => []]);
         }
 
-        $tables = Table::where('outlet_id', $outletId)
-            ->orderBy('code', 'asc')
-            ->get();
-
-        return response()->json([
-            'success' => true,
-            'data' => $tables
+    $tables = Table::where('outlet_id', $outletId)
+    ->orderBy('code', 'asc')
+        ->get()
+        ->append([
+            'reservation_status', 
+            'is_occupied', 
+            'active_order_id', 
+            'reserved_customer_name'
         ]);
-    }
+
+    return response()->json(['success' => true, 'data' => $tables]);
+}
+    // public function index(Request $request)
+    // {
+    //     $user = $request->user();
+    //     $outletId = $this->getOutletId($user);
+
+    //     if (!$outletId) {
+    //         // Jika user tidak punya outlet, return kosong (bukan error)
+    //         return response()->json(['success' => true, 'data' => []]);
+    //     }
+
+    //     $tables = Table::where('outlet_id', $outletId)
+    //         ->orderBy('code', 'asc')
+    //         ->get();
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'data' => $tables
+    //     ]);
+    // }
 
     /**
      * POST /api/v1/pos/tables

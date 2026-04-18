@@ -56,40 +56,40 @@ class Table extends Model
     }
 
 public function getReservationStatusAttribute()
-    {
-        // 🔥 1. ANTI GHOST-STATE: Jika ada Order Aktif dan tipenya BUKAN Reservasi,
-        // abaikan status reservasi agar tagihan Walk-In (Dine In/Open Bill) tidak dibajak!
-        $activeOrder = \App\Models\Order::where('table_number', $this->code)
-            ->where('outlet_id', $this->outlet_id)
-            ->whereIn('status', ['pending', 'unpaid', 'processing'])
-            ->latest()
-            ->first();
+{
+    // 1. Cek Order Aktif (Sama seperti sebelumnya)
+    $activeOrder = \App\Models\Order::where('table_number', $this->code)
+        ->where('outlet_id', $this->outlet_id)
+        ->whereIn('status', ['pending', 'unpaid', 'processing'])
+        ->latest()->first();
 
-        if ($activeOrder && strtolower($activeOrder->type_order) !== 'reservasi') {
-            return null; // Meja ini sedang dipakai Walk-In murni.
-        }
-
-        // 🔥 2. NORMAL FLOW: Jika meja aman, ambil status reservasi hari ini.
-        // MENGGUNAKAN "CASE WHEN" SEBAGAI PENGGANTI "FIELD()" UNTUK POSTGRESQL
-        $reservation = \App\Models\Reservation::where('table_id', $this->id)
-            ->whereDate('reservation_time', \Carbon\Carbon::today())
-            ->whereIn('status', ['booked', 'seated']) 
-            ->orderByRaw("CASE WHEN status = 'seated' THEN 1 WHEN status = 'booked' THEN 2 ELSE 3 END")
-            ->orderBy('reservation_time', 'asc')
-            ->first();
-
-        return $reservation ? $reservation->status : null;
+    if ($activeOrder && strtolower($activeOrder->type_order) !== 'reservasi') {
+        return null; 
     }
+
+    // 2. PERBAIKAN: Ambil reservasi paling awal yang statusnya belum selesai
+    // Kita hapus filter 'whereDate' hari ini agar reservasi besok pun bisa terlihat jika diinginkan,
+    // atau gunakan '>=' today()
+    $reservation = \App\Models\Reservation::where('table_id', $this->id)
+        ->whereIn('status', ['booked', 'seated']) 
+        ->where('reservation_time', '>=', now()->startOfDay()) // Ambil mulai dr jam 00:00 hari ini
+        ->orderByRaw("CASE WHEN status = 'seated' THEN 1 WHEN status = 'booked' THEN 2 ELSE 3 END")
+        ->orderBy('reservation_time', 'asc')
+        ->first();
+
+    return $reservation ? $reservation->status : null;
+}
 
 public function getReservedCustomerNameAttribute()
     {
         $reservation = \App\Models\Reservation::where('table_id', $this->id)
             ->whereDate('reservation_time', \Carbon\Carbon::today())
-            ->where('status', 'booked') 
+            ->whereIn('status', ['booked', 'seated']) 
+            // 🔥 PERBAIKAN POSTGRESQL: Gunakan CASE WHEN sebagai pengganti FIELD()
+            ->orderByRaw("CASE WHEN status = 'seated' THEN 1 WHEN status = 'booked' THEN 2 ELSE 3 END")
             ->orderBy('reservation_time', 'asc')
             ->first();
 
-        // 🔥 PERBAIKAN: Gunakan customer_name, bukan name
         return $reservation ? $reservation->customer_name : null;
     }
     
