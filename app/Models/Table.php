@@ -55,11 +55,27 @@ class Table extends Model
         return $this->qr_content;
     }
 
-    public function getReservationStatusAttribute()
+public function getReservationStatusAttribute()
     {
+        // 🔥 1. ANTI GHOST-STATE: Jika ada Order Aktif dan tipenya BUKAN Reservasi,
+        // abaikan status reservasi agar tagihan Walk-In (Dine In/Open Bill) tidak dibajak!
+        $activeOrder = \App\Models\Order::where('table_number', $this->code)
+            ->where('outlet_id', $this->outlet_id)
+            ->whereIn('status', ['pending', 'unpaid', 'processing'])
+            ->latest()
+            ->first();
+
+        if ($activeOrder && strtolower($activeOrder->type_order) !== 'reservasi') {
+            return null; // Meja ini sedang dipakai Walk-In murni.
+        }
+
+        // 🔥 2. NORMAL FLOW: Jika meja aman, ambil status reservasi hari ini.
+        // Gunakan FIELD() agar status 'seated' (sudah duduk) diprioritaskan 
+        // daripada 'booked' (belum datang) jika ada double data.
         $reservation = \App\Models\Reservation::where('table_id', $this->id)
             ->whereDate('reservation_time', \Carbon\Carbon::today())
             ->whereIn('status', ['booked', 'seated']) 
+            ->orderByRaw("FIELD(status, 'seated', 'booked')")
             ->orderBy('reservation_time', 'asc')
             ->first();
 
@@ -142,12 +158,12 @@ class Table extends Model
             return true;
         }
 
-        // 3. Cek dari Reservasi (Solusi untuk Masalah 2)
-        // Pastikan tabel Reservations menggunakan 'table_id' (integer), bukan 'code' (string)
+        // 3. Cek dari Reservasi
+        // 🔥 PERBAIKAN FATAL: Meja hanya 'occupied' fisik jika tamu SUDAH DATANG ('seated').
+        // Status 'booked' (belum datang) TIDAK BOLEH membuat meja jadi occupied!
         $hasActiveReservation = \App\Models\Reservation::where('table_id', $this->id)
-            // Menggunakan Carbon untuk memastikan hari ini sesuai timezone server (config/app.php -> 'timezone' => 'Asia/Jakarta')
             ->whereDate('reservation_time', \Carbon\Carbon::today()) 
-            ->whereIn('status', ['booked', 'seated'])
+            ->where('status', 'seated') // <--- HAPUS 'booked' dari sini!
             ->exists();
 
         return $hasActiveReservation;

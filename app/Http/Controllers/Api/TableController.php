@@ -124,10 +124,10 @@ class TableController extends Controller
                 ->update(['status' => 'completed']);
             
             // 3. Batalkan Reservasi 'booked' yang menggantung
-            Reservation::where('table_id', $table->id)
-                ->whereDate('reservation_time', \Carbon\Carbon::today())
-                ->where('status', 'booked')
-                ->update(['status' => 'cancelled']);
+            // Reservation::where('table_id', $table->id)
+            //     ->whereDate('reservation_time', \Carbon\Carbon::today())
+            //     ->where('status', 'booked')
+            //     ->update(['status' => 'cancelled']);
         });
 
         return response()->json(['success' => true, 'message' => 'Meja berhasil dikosongkan.']);
